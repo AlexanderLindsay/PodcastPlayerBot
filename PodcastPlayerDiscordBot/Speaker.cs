@@ -10,190 +10,254 @@ namespace PodcastPlayerDiscordBot
 {
     public class Speaker
     {
-        private object playerLock = new object();
+        private object dowloadingLock = new object();
         private object finishedLock = new object();
+        private object playingLock = new object();
 
-        private Uri source { get; set; }
+        private bool IsDownloading { get; set; }
+        private bool IsDoneDownloading { get; set; } = false;
         private bool IsPlaying { get; set; }
-        private bool IsDone { get; set; } = false;
 
         private BufferedWaveProvider provider { get; set; } = null;
 
-        public Speaker(string url) : this(new Uri(url)) { }
-
-        public Speaker(Uri url)
-        {
-            source = url;
-        }
+        public Speaker() { }
 
         public void Stop()
         {
-            lock (playerLock)
+            provider.ClearBuffer();
+
+            lock (dowloadingLock)
+            {
+                IsDownloading = false;
+            }
+            lock(playingLock)
             {
                 IsPlaying = false;
             }
         }
 
-        public void Play(int channelCount, Action<byte[], int, int> addToBuffer)
+        public bool IsSpeaking()
         {
-            var outFormat = new WaveFormat(48000, 16, channelCount);
-            var keepPlaying = true;
+            var temp = false;
 
-            while(provider == null)
+            lock (playingLock)
             {
-                Thread.Sleep(500);
+                temp = IsPlaying;
             }
 
-            using (var resampler = new MediaFoundationResampler(provider, outFormat)) {
-                resampler.ResamplerQuality = 60;
-
-                do
-                {
-                    int blockSize = outFormat.AverageBytesPerSecond / 50;
-                    byte[] adjustedBuffer = new byte[blockSize];
-                    int byteCount;
-
-                    if ((byteCount = resampler.Read(adjustedBuffer, 0, blockSize)) > 0)
-                    {
-                        if (byteCount < blockSize)
-                        {
-                            // Incomplete Frame
-                            for (int i = byteCount; i < blockSize; i++)
-                                adjustedBuffer[i] = 0;
-                        }
-                        addToBuffer(adjustedBuffer, 0, blockSize); // Send the buffer to Discord
-                    }
-
-                    lock (finishedLock)
-                    {
-                        keepPlaying = !IsDone;
-                    }
-
-                    keepPlaying = keepPlaying || provider.BufferedBytes > 0;
-
-                } while (keepPlaying);
-            }
+            return temp;
         }
 
-        public void Load(Action<string> reportError)
+        public void Play(int channelCount, Action<byte[], int, int> addToBuffer)
         {
-            var webRequest = (HttpWebRequest)WebRequest.Create(source);
-            HttpWebResponse resp;
-            try
+            lock (playingLock)
             {
-                resp = (HttpWebResponse)webRequest.GetResponse();
-            }
-            catch (WebException e)
-            {
-                if (e.Status != WebExceptionStatus.RequestCanceled)
-                {
-                    reportError(e.Message);
-                }
-                return;
-            }
-            var buffer = new byte[16384 * 4];
+                if (IsPlaying)
+                    return;
 
-            lock (playerLock)
-            {
                 IsPlaying = true;
             }
 
-            IMp3FrameDecompressor decompressor = null;
-
-            try
+            ThreadPool.QueueUserWorkItem(delegate
             {
-                using (var responseStream = resp.GetResponseStream())
+                var outFormat = new WaveFormat(48000, 16, channelCount);
+                var keepPlaying = true;
+
+                while (provider == null)
                 {
-                    var readFullyStream = new ReadFullyStream(responseStream);
+                    Thread.Sleep(500);
+                }
 
-                    Mp3Frame frame;
-                    List<Mp3Frame> frames = Enumerable.Range(0, 10).Select(i => Mp3Frame.LoadFromStream(readFullyStream)).ToList();
-
-                    while (frames.Select(f => new { SampleRate = f.SampleRate, ChannelMode = f.ChannelMode }).Distinct().Count() != 1)
-                    {
-                        frames.RemoveAt(0);
-                        frames.Add(Mp3Frame.LoadFromStream(readFullyStream));
-                    }
-
-                    bool keepPlaying;
+                using (var resampler = new MediaFoundationResampler(provider, outFormat))
+                {
+                    resampler.ResamplerQuality = 60;
 
                     do
                     {
-                        if (ShouldPauseBuffering(provider))
+                        lock (playingLock)
                         {
-                            Thread.Sleep(500);
-                        }
-                        else
-                        {
-                            try
+                            if (!IsPlaying)
                             {
-                                if (frames.Any())
-                                {
-                                    frame = frames.First();
-                                    frames.RemoveAt(0);
-                                }
-                                else
-                                {
-                                    frame = Mp3Frame.LoadFromStream(readFullyStream);
-                                }
-                            }
-                            catch (EndOfStreamException)
-                            {
-                                // reached the end of the MP3 file / stream
-
-                                lock (playerLock)
-                                {
-                                    IsPlaying = false;
-                                }
-
-                                lock (finishedLock)
-                                {
-                                    IsDone = true;
-                                }
                                 break;
                             }
-                            catch (WebException)
-                            {
-                                // probably we have aborted download from the GUI thread
-
-                                lock (finishedLock)
-                                {
-                                    IsDone = true;
-                                }
-                                break;
-                            }
-                            if (decompressor == null)
-                            {
-                                decompressor = CreateFrameDecompressor(frame);
-                            }
-                            int decompressed = decompressor.DecompressFrame(frame, buffer, 0);
-                            if (provider == null)
-                            {
-                                provider = new BufferedWaveProvider(decompressor.OutputFormat);
-                                provider.BufferDuration = TimeSpan.FromSeconds(20);
-                            }
-                            provider.AddSamples(buffer, 0, decompressed);
                         }
 
-                        lock (playerLock)
+                        int blockSize = outFormat.AverageBytesPerSecond / 50;
+                        byte[] adjustedBuffer = new byte[blockSize];
+                        int byteCount;
+
+                        if ((byteCount = resampler.Read(adjustedBuffer, 0, blockSize)) > 0)
                         {
-                            keepPlaying = IsPlaying;
+                            if (byteCount < blockSize)
+                            {
+                                // Incomplete Frame
+                                for (int i = byteCount; i < blockSize; i++)
+                                    adjustedBuffer[i] = 0;
+                            }
+
+                            lock (playingLock)
+                            {
+                                if (IsPlaying)
+                                {
+                                    addToBuffer(adjustedBuffer, 0, blockSize); // Send the buffer to Discord
+                                }
+                            }
                         }
+
+                        lock (finishedLock)
+                        {
+                            keepPlaying = !IsDoneDownloading;
+                        }
+
+                        keepPlaying = keepPlaying || provider.BufferedBytes > 0;
 
                     } while (keepPlaying);
+                }
+            });
+        }
 
-                    // was doing this in a finally block, but for some reason
-                    // we are hanging on response stream .Dispose so never get there
-                    decompressor.Dispose();
-                }
-            }
-            finally
+        public void Load(string url, Action<string> reportError)
+        {
+            Load(new Uri(url), reportError);
+        }
+
+        public void Load(Uri url, Action<string> reportError)
+        {
+            ThreadPool.QueueUserWorkItem(delegate
             {
-                if (decompressor != null)
+                var webRequest = (HttpWebRequest)WebRequest.Create(url);
+                HttpWebResponse resp;
+                try
                 {
-                    decompressor.Dispose();
+                    resp = (HttpWebResponse)webRequest.GetResponse();
                 }
-            }
+                catch (WebException e)
+                {
+                    if (e.Status != WebExceptionStatus.RequestCanceled)
+                    {
+                        reportError(e.Message);
+                    }
+                    return;
+                }
+                var buffer = new byte[16384 * 4];
+
+                lock (dowloadingLock)
+                {
+                    IsDownloading = true;
+                }
+
+                IMp3FrameDecompressor decompressor = null;
+
+                try
+                {
+                    using (var responseStream = resp.GetResponseStream())
+                    {
+                        var readFullyStream = new ReadFullyStream(responseStream);
+
+                        Mp3Frame frame;
+                        List<Mp3Frame> frames = Enumerable.Range(0, 10).Select(i => Mp3Frame.LoadFromStream(readFullyStream)).ToList();
+
+                        while (frames.Select(f => new { SampleRate = f.SampleRate, ChannelMode = f.ChannelMode }).Distinct().Count() != 1)
+                        {
+                            frames.RemoveAt(0);
+                            frames.Add(Mp3Frame.LoadFromStream(readFullyStream));
+                        }
+
+                        bool keepPlaying;
+
+                        do
+                        {
+                            if (ShouldPauseBuffering(provider))
+                            {
+                                Thread.Sleep(500);
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    if (frames.Any())
+                                    {
+                                        frame = frames.First();
+                                        frames.RemoveAt(0);
+                                    }
+                                    else
+                                    {
+                                        frame = Mp3Frame.LoadFromStream(readFullyStream);
+                                    }
+                                }
+                                catch (EndOfStreamException)
+                                {
+                                    // reached the end of the MP3 file / stream
+
+                                    lock (dowloadingLock)
+                                    {
+                                        IsDownloading = false;
+                                    }
+
+                                    lock (finishedLock)
+                                    {
+                                        IsDoneDownloading = true;
+                                    }
+                                    break;
+                                }
+                                catch (WebException)
+                                {
+                                    // probably we have aborted download from the GUI thread
+
+                                    lock (finishedLock)
+                                    {
+                                        IsDoneDownloading = true;
+                                    }
+                                    break;
+                                }
+                                if (decompressor == null)
+                                {
+                                    decompressor = CreateFrameDecompressor(frame);
+                                }
+
+                                if(frame == null)
+                                {
+                                    lock (finishedLock)
+                                    {
+                                        IsDoneDownloading = true;
+                                    }
+
+                                    lock (dowloadingLock)
+                                    {
+                                        IsDownloading = false;
+                                    }
+                                    break;
+                                }
+
+                                int decompressed = decompressor.DecompressFrame(frame, buffer, 0);
+                                if (provider == null)
+                                {
+                                    provider = new BufferedWaveProvider(decompressor.OutputFormat);
+                                    provider.BufferDuration = TimeSpan.FromSeconds(20);
+                                }
+                                provider.AddSamples(buffer, 0, decompressed);
+                            }
+
+                            lock (dowloadingLock)
+                            {
+                                keepPlaying = IsDownloading;
+                            }
+
+                        } while (keepPlaying);
+
+                        // was doing this in a finally block, but for some reason
+                        // we are hanging on response stream .Dispose so never get there
+                        decompressor.Dispose();
+                    }
+                }
+                finally
+                {
+                    if (decompressor != null)
+                    {
+                        decompressor.Dispose();
+                    }
+                }
+            });
         }
 
         private bool ShouldPauseBuffering(BufferedWaveProvider provider)

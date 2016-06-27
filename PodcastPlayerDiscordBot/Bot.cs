@@ -16,11 +16,12 @@ namespace PodcastPlayerDiscordBot
     {
         private readonly static string prefix = "$pod";
         private DiscordClient Client { get; set; }
-
-        private bool IsPlaying = false;
+        private Speaker Speaker { get; set; }
 
         public Bot(string appName)
         {
+            Speaker = new Speaker();
+
             Client = new DiscordClient(c =>
             {
                 c.AppName = appName;
@@ -82,6 +83,7 @@ namespace PodcastPlayerDiscordBot
             var service = Client.GetService<CommandService>();
 
             service.CreateCommand("info")
+                .AddCheck(CheckPermissions)
                 .Description("displays information about the bot")
                 .Do(async (e) =>
                 {
@@ -94,44 +96,69 @@ namespace PodcastPlayerDiscordBot
                     await Reply(e, msg);
                 });
 
-            service.CreateCommand("play")
+            service.CreateCommand("play url")
+                .AddCheck(CheckPermissions)
                 .Description("plays a podcast in the voice channel you are currently in")
+                .Parameter("url", ParameterType.Required)
                 .Do(async (e) =>
                 {
                     var channel = e.User.VoiceChannel;
                     if (channel == null)
                     {
                         await Reply(e, "Can't find voice channel.");
+                        return;
                     }
 
-                    if (!IsPlaying)
-                    {
-                        IsPlaying = true;
+                    var href = e.GetArg("url");
+                    var url = new Uri(href);
 
+                    if (!Speaker.IsSpeaking())
+                    {
                         var audioService = Client.GetService<AudioService>();
                         var audio = await audioService.Join(channel);
                         var channelCount = audioService.Config.Channels;
 
-                        var url = "http://traffic.libsyn.com/theblacktapes/THE_BLACK_TAPES_EPISODE_207_-_Personal_Possessions.mp3";
-                        var speaker = new Speaker(url);
-                        ThreadPool.QueueUserWorkItem(delegate
-                        {
-                            speaker.Load(
-                                (error) =>
-                                {
-                                    Reply(e, $"Error playing audio: {error}").Wait();
-                                });
-                        });
+                        Speaker.Load(url,
+                            (error) =>
+                            {
+                                Reply(e, $"Error playing audio: {error}").Wait();
+                            });
 
-                        ThreadPool.QueueUserWorkItem(delegate
-                        {
-                            speaker.Play(channelCount,
-                                (b, offset, count) =>
-                                {
-                                    audio.Send(b, offset, count);
-                                });
-                        });
+                        Speaker.Play(channelCount,
+                            (b, offset, count) =>
+                            {
+                                audio.Send(b, offset, count);
+                            });
                     }
+                });
+
+            service.CreateCommand("stop")
+                .Alias("pause")
+                .Alias("stap")
+                .AddCheck(CheckPermissions)
+                .Description("halts the playing of the podcast")
+                .Do((e) =>
+                {
+                    Speaker.Stop();
+                });
+
+            service.CreateCommand("leave")
+                .Alias("go away")
+                .AddCheck(CheckPermissions)
+                .Description("the bot will leave the voice channel it is currently in")
+                .Do(async (e) =>
+                {
+                    var channel = e.User.VoiceChannel;
+                    if (channel == null)
+                    {
+                        await Reply(e, "Can't find voice channel.");
+                        return;
+                    }
+
+                    Speaker.Stop();
+
+                    var audioService = Client.GetService<AudioService>();
+                    await audioService.Leave(channel);
                 });
         }
 
@@ -151,6 +178,11 @@ namespace PodcastPlayerDiscordBot
         private async Task Reply(CommandEventArgs e, string message)
         {
             await Reply(e.Channel, message);
+        }
+
+        private bool CheckPermissions(Command command, User user, Channel channel)
+        {
+            return true;
         }
 
         private void OnCommandError(object sender, CommandErrorEventArgs e)
