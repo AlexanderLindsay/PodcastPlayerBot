@@ -157,7 +157,10 @@ namespace PodcastPlayerDiscordBot
                         Mp3Frame frame;
                         List<Mp3Frame> frames = Enumerable.Range(0, 10).Select(i => Mp3Frame.LoadFromStream(readFullyStream)).ToList();
 
-                        while (frames.Select(f => new { SampleRate = f.SampleRate, ChannelMode = f.ChannelMode }).Distinct().Count() != 1)
+                        while (frames
+                            .Where(f => f != null)
+                            .Select(f => new { SampleRate = f.SampleRate, ChannelMode = f.ChannelMode })
+                            .Distinct().Count() != 1)
                         {
                             frames.RemoveAt(0);
                             frames.Add(Mp3Frame.LoadFromStream(readFullyStream));

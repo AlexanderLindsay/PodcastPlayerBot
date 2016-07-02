@@ -17,10 +17,12 @@ namespace PodcastPlayerDiscordBot
         private readonly static string prefix = "$pod";
         private DiscordClient Client { get; set; }
         private Speaker Speaker { get; set; }
+        private Dictionary<string, PodcastFeed> Feeds { get; set; }
 
         public Bot(string appName)
         {
             Speaker = new Speaker();
+            Feeds = new Dictionary<string, PodcastFeed>();
 
             Client = new DiscordClient(c =>
             {
@@ -159,6 +161,138 @@ namespace PodcastPlayerDiscordBot
 
                     var audioService = Client.GetService<AudioService>();
                     await audioService.Leave(channel);
+                });
+
+            service.CreateCommand("rss add")
+                .AddCheck(CheckPermissions)
+                .Description("adds a rss feed url to the bot")
+                .Parameter("name", ParameterType.Required)
+                .Parameter("url", ParameterType.Required)
+                .Do(async (e) =>
+                {
+                    var feed = PodcastFeed.Load(e.GetArg("url"));
+                    Feeds.Add(e.GetArg("name"), feed);
+
+                    await Reply(e, "Feed added");
+                });
+
+            service.CreateCommand("rss info")
+               .AddCheck(CheckPermissions)
+               .Description("displays information about an rss feed")
+               .Parameter("name", ParameterType.Required)
+               .Do(async (e) =>
+               {
+                   var name = e.GetArg("name");
+                   if (Feeds.ContainsKey(name))
+                   {
+                       var feed = Feeds[name];
+
+                       await Reply(e, $"{feed}");
+                   }
+                   else
+                   {
+                       await Reply(e, "No feed by that name");
+                   }
+               });
+
+            service.CreateCommand("rss list")
+               .AddCheck(CheckPermissions)
+               .Description("lists added rss feeds")
+               .Do(async (e) =>
+               {
+                   if (Feeds.Count == 0)
+                   {
+                       await Reply(e, "No feeds");
+                       return;
+                   }
+
+                   var builder = new StringBuilder();
+
+                   foreach (var feed in Feeds.Keys)
+                   {
+                       builder.AppendLine(feed);
+                   }
+
+                   await Reply(e, builder.ToString());
+               });
+
+            service.CreateCommand("rss episodes")
+                .AddCheck(CheckPermissions)
+                .Description("lists episodes in an rss feed")
+                .Parameter("name", ParameterType.Required)
+                .Do(async (e) =>
+                {
+                    var name = e.GetArg("name");
+                    if (Feeds.ContainsKey(name))
+                    {
+                        var feed = Feeds[name];
+                        var builder = new StringBuilder();
+                        foreach (var item in feed.ListItems())
+                        {
+                            builder.Append($"{item}");
+                        }
+
+                        var message = builder.ToString();
+                        if (message.Length > 2000)
+                        {
+                            message = $"{message.Substring(0, 1997)}...";
+                        }
+
+                        await Reply(e, message);
+                    }
+                    else
+                    {
+                        await Reply(e, "No feed by that name");
+                    }
+                });
+
+            service.CreateCommand("rss play last")
+                .AddCheck(CheckPermissions)
+                .Description("play the last episode of the given rss feed")
+                .Parameter("name", ParameterType.Required)
+                .Do(async (e) =>
+                {
+                    var name = e.GetArg("name");
+                    if (Feeds.ContainsKey(name))
+                    {
+                        var feed = Feeds[name];
+
+                        var channel = e.User.VoiceChannel;
+                        if (channel == null)
+                        {
+                            await Reply(e, "Can't find voice channel.");
+                            return;
+                        }
+
+                        var url = feed.ListItems().FirstOrDefault()?.Link;
+                        if(url == null)
+                        {
+                            await Reply(e, "Can't find url for episode.");
+                        }
+
+                        if (!Speaker.IsSpeaking())
+                        {
+                            var audioService = Client.GetService<AudioService>();
+                            var audio = await audioService.Join(channel);
+                            var channelCount = audioService.Config.Channels;
+
+                            Speaker.Load(url,
+                                (error) =>
+                                {
+                                    Reply(e, $"Error playing audio: {error}").Wait();
+                                });
+
+                            Speaker.Play(channelCount,
+                                (b, offset, count) =>
+                                {
+                                    audio.Send(b, offset, count);
+                                });
+                        }
+                    }
+                    else
+                    {
+                        await Reply(e, "No feed by that name");
+                    }
                 });
         }
 
