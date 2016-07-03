@@ -3,33 +3,43 @@ using System.Collections.Generic;
 using System.Linq;
 using System.ServiceModel.Syndication;
 using System.Text;
-using System.Threading.Tasks;
 using System.Xml;
 
 namespace PodcastPlayerDiscordBot
 {
     public class PodcastFeed
     {
+        public Uri Url { get; private set; }
         private SyndicationFeed Feed { get; set; }
 
-        public PodcastFeed() { }
-
-        public static PodcastFeed Load(string url)
+        public PodcastFeed(string url)
         {
-            using (var xmlReader = XmlReader.Create(url))
+            Url = new Uri(url);
+        }
+
+        public PodcastFeed(Uri url)
+        {
+            Url = url;
+        }
+
+        private void LoadFeed()
+        {
+            using(var xmlReader = XmlReader.Create(Url.ToString()))
             {
-                return new PodcastFeed()
-                {
-                    Feed = SyndicationFeed.Load(xmlReader)
-                };
+                Feed = SyndicationFeed.Load(xmlReader);
             }
+        }
+
+        public void Refresh()
+        {
+            LoadFeed();
         }
 
         public IEnumerable<Episode> ListItems()
         {
             if (Feed == null)
             {
-                yield break;
+                LoadFeed();
             }
 
             foreach (var item in Feed.Items)
@@ -48,7 +58,7 @@ namespace PodcastPlayerDiscordBot
         {
             if (Feed == null)
             {
-                return "No feed loaded.";
+                LoadFeed();
             }
 
             var builder = new StringBuilder();

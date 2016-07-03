@@ -87,6 +87,8 @@
   <ItemGroup>
     <Compile Include="Bot.cs" />
     <Compile Include="Episode.cs" />
+    <Compile Include="FileFeedStorage.cs" />
+    <Compile Include="IFeedStorage.cs" />
     <Compile Include="PodcastFeed.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

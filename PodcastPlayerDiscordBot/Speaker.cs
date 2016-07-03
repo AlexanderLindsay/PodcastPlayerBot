@@ -48,6 +48,16 @@ namespace PodcastPlayerDiscordBot
             return temp;
         }
 
+        private void FinishPlaying()
+        {
+            lock (playingLock)
+            {
+                IsPlaying = false;
+            }
+
+            provider = null;
+        }
+
         public void Play(int channelCount, Action<byte[], int, int> addToBuffer)
         {
             lock (playingLock)
@@ -113,6 +123,8 @@ namespace PodcastPlayerDiscordBot
 
                     } while (keepPlaying);
                 }
+
+                FinishPlaying();
             });
         }
 
@@ -250,7 +262,10 @@ namespace PodcastPlayerDiscordBot
 
                         // was doing this in a finally block, but for some reason
                         // we are hanging on response stream .Dispose so never get there
-                        decompressor.Dispose();
+                        if (decompressor != null)
+                        {
+                            decompressor.Dispose();
+                        }
                     }
                 }
                 finally
