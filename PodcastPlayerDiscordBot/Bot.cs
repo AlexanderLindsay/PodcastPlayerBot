@@ -22,12 +22,16 @@ namespace PodcastPlayerDiscordBot
         private Dictionary<string, PodcastFeed> Feeds { get; set; }
         private IFeedStorage Storage { get; set; }
 
-        private string LastFeed {get;set;}
-        private int LastEpisode { get; set; }
+        private string LastFeed { get; set; }
+        private int LastEpisodeNumber { get; set; }
+
+        private Episode CurrentEpisode { get; set; }
 
         public Bot(string appName, IFeedStorage storage)
         {
             Speaker = new Speaker();
+            Speaker.FinishedPlaying += StopPlaying;
+
             Storage = storage;
             Feeds = storage.GetFeeds();
 
@@ -75,6 +79,7 @@ namespace PodcastPlayerDiscordBot
                     try
                     {
                         await Client.Connect(token);
+                        Client.SetStatus(UserStatus.Idle);
                         break;
                     }
                     catch (Exception ex)
@@ -84,6 +89,13 @@ namespace PodcastPlayerDiscordBot
                     }
                 }
             });
+        }
+
+        private void StopPlaying(object sender, FinishedPlayingEventArgs args)
+        {
+            CurrentEpisode = null;
+            Client.SetGame(null);
+            Client.SetStatus(UserStatus.Idle);
         }
 
         private void CreateCommands()
@@ -105,6 +117,7 @@ namespace PodcastPlayerDiscordBot
                 });
 
             service.CreateCommand("play url")
+                .Alias("play")
                 .AddCheck(CheckPermissions)
                 .Description("plays a podcast in the voice channel you are currently in")
                 .Parameter("url", ParameterType.Required)
@@ -113,7 +126,7 @@ namespace PodcastPlayerDiscordBot
                     var href = e.GetArg("url");
                     var url = new Uri(href);
 
-                    await PlayUrl(e, url);
+                    await PlayUrl(e, url, url.ToString());
                 });
 
             service.CreateCommand("stop")
@@ -124,7 +137,6 @@ namespace PodcastPlayerDiscordBot
                 .Do((e) =>
                 {
                     Speaker.Stop();
-                    Client.SetGame("");
                 });
 
             service.CreateCommand("leave")
@@ -144,6 +156,23 @@ namespace PodcastPlayerDiscordBot
 
                     var audioService = Client.GetService<AudioService>();
                     await audioService.Leave(channel);
+                });
+
+            service.CreateCommand("what")
+                .Alias("what is this")
+                .Alias("current")
+                .Alias("playing")
+                .AddCheck(CheckPermissions)
+                .Description("provides information on the currenly playing episode")
+                .Do(async (e) =>
+                {
+                    if (CurrentEpisode == null)
+                    {
+                        await Reply(e, "No episode currently playing");
+                        return;
+                    }
+
+                    await Reply(e, CurrentEpisode.Describe());
                 });
 
             service.CreateCommand("rss add")
@@ -200,6 +229,7 @@ namespace PodcastPlayerDiscordBot
                });
 
             service.CreateCommand("rss episodes")
+                .Alias("episodes")
                 .AddCheck(CheckPermissions)
                 .Description("lists episodes in an rss feed")
                 .Parameter("name", ParameterType.Required)
@@ -213,7 +243,7 @@ namespace PodcastPlayerDiscordBot
 
                         var builder = new StringBuilder();
 
-                        var number = items.Count();
+                        var number = feed.NumberOfEpisodes();
                         builder.AppendLine($"Number of Episodes: {number}");
                         builder.AppendLine();
 
@@ -248,8 +278,7 @@ namespace PodcastPlayerDiscordBot
                     {
                         var feed = Feeds[name];
 
-                        var url = feed.ListItems().FirstOrDefault()?.Link;
-                        await PlayUrl(e, url);
+                        await PlayEpisodeFromFeed(e, e.GetArg("name"), feed.NumberOfEpisodes());
                     }
                     else
                     {
@@ -258,40 +287,25 @@ namespace PodcastPlayerDiscordBot
                 });
 
             service.CreateCommand("rss play episode")
+                .Alias("play episode")
                 .Alias("episode")
+                .Alias("e")
                 .AddCheck(CheckPermissions)
                 .Description("play the given episode of the given rss feed")
                 .Parameter("name", ParameterType.Required)
                 .Parameter("episode", ParameterType.Required)
                 .Do(async (e) =>
                 {
-                    var name = e.GetArg("name");
-                    if (Feeds.ContainsKey(name))
+                    var number = e.GetArg("episode");
+                    int index;
+                    if (!int.TryParse(number, out index))
                     {
-                        var feed = Feeds[name];
-
-                        var number = e.GetArg("episode");
-                        int index;
-                        if (!int.TryParse(number, out index))
-                        {
-                            await Reply(e, "not a valid episode number");
-                        }
-
-                        var episodeNumber = index - 1;
-
-                        LastFeed = name;
-
-                        var episode = feed.ListItems().OrderBy(f => f.PublishedDate).ElementAt(episodeNumber);
-                        if (await PlayUrl(e, episode.Link))
-                        {
-                            await Reply(e, $"Playing {episode}");
-                            Client.SetGame(episode.Name);
-                            LastEpisode = episodeNumber;
-                        }                    }
-                    else
-                    {
-                        await Reply(e, "No feed by that name");
+                        await Reply(e, "not a valid episode number");
                     }
+
+                    var episodeNumber = index - 1;
+
+                    await PlayEpisodeFromFeed(e, e.GetArg("name"), episodeNumber);
                 });
 
             service.CreateCommand("next")
@@ -299,25 +313,7 @@ namespace PodcastPlayerDiscordBot
                 .Description("plays the next episode of the last played podcast")
                 .Do(async (e) =>
                 {
-                    var name = LastFeed;
-                    if (Feeds.ContainsKey(name))
-                    {
-                        var feed = Feeds[name];
-
-                        var episodeNumber = LastEpisode + 1;
-
-                        var episode = feed.ListItems().OrderBy(f => f.PublishedDate).ElementAt(episodeNumber);
-                        if (await PlayUrl(e, episode.Link))
-                        {
-                            await Reply(e, $"Playing {episode}");
-                            Client.SetGame(episode.Name);
-                            LastEpisode = episodeNumber;
-                        }
-                    }
-                    else
-                    {
-                        await Reply(e, "No feed by that name");
-                    }
+                    await PlayEpisodeFromFeed(e, LastFeed, LastEpisodeNumber + 1);
                 });
 
             service.CreateCommand("restart")
@@ -325,25 +321,7 @@ namespace PodcastPlayerDiscordBot
                 .Description("restart the last played episode")
                 .Do(async (e) =>
                 {
-                    var name = LastFeed;
-                    if (Feeds.ContainsKey(name))
-                    {
-                        var feed = Feeds[name];
-
-                        var episodeNumber = LastEpisode;
-
-                        var episode = feed.ListItems().OrderBy(f => f.PublishedDate).ElementAt(episodeNumber);
-                        if (await PlayUrl(e, episode.Link))
-                        {
-                            await Reply(e, $"Playing {episode}");
-                            Client.SetGame(episode.Name);
-                            LastEpisode = episodeNumber;
-                        }
-                    }
-                    else
-                    {
-                        await Reply(e, "No feed by that name");
-                    }
+                    await PlayEpisodeFromFeed(e, LastFeed, LastEpisodeNumber);
                 });
         }
 
@@ -353,7 +331,33 @@ namespace PodcastPlayerDiscordBot
             await Storage.AddFeed(name, feed);
         }
 
-        private async Task<bool> PlayUrl(CommandEventArgs e, Uri url)
+        private async Task PlayEpisodeFromFeed(CommandEventArgs e, string feedName, int episodeNumber)
+        {
+            if (Feeds.ContainsKey(feedName))
+            {
+                var feed = Feeds[feedName];
+
+                var episode = feed.ListItems().OrderBy(f => f.PublishedDate).ElementAtOrDefault(episodeNumber);
+                if (episode == null)
+                {
+                    await Reply(e, "No episode with that number");
+                }
+
+                if (await PlayUrl(e, episode.Link, episode.Name))
+                {
+                    await Reply(e, $"Playing {episode}");
+                    LastFeed = feedName;
+                    LastEpisodeNumber = episodeNumber;
+                    CurrentEpisode = episode;
+                }
+            }
+            else
+            {
+                await Reply(e, "No feed by that name");
+            }
+        }
+
+        private async Task<bool> PlayUrl(CommandEventArgs e, Uri url, string name)
         {
             var channel = e.User.VoiceChannel;
             if (channel == null)
@@ -375,6 +379,8 @@ namespace PodcastPlayerDiscordBot
                 var channelCount = audioService.Config.Channels;
 
                 Client.Log.Info(e.User.Name, $"Playing url: {url}");
+                Client.SetGame(name);
+                Client.SetStatus(UserStatus.Online);
 
                 Speaker.Load(url,
                     (error) =>

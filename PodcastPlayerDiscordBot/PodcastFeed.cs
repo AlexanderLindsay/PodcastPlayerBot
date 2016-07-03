@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.ServiceModel.Syndication;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
+using System.Xml.Linq;
 
 namespace PodcastPlayerDiscordBot
 {
@@ -35,6 +38,16 @@ namespace PodcastPlayerDiscordBot
             LoadFeed();
         }
 
+        public int NumberOfEpisodes()
+        {
+            if(Feed == null)
+            {
+                LoadFeed();
+            }
+
+            return Feed.Items.Count();
+        }
+
         public IEnumerable<Episode> ListItems()
         {
             if (Feed == null)
@@ -44,12 +57,34 @@ namespace PodcastPlayerDiscordBot
 
             foreach (var item in Feed.Items)
             {
+                var durationExtension = item.ElementExtensions.FirstOrDefault(e => "duration".Equals(e.OuterName, StringComparison.OrdinalIgnoreCase));
+                var imageExtension = item.ElementExtensions.FirstOrDefault(e => "image".Equals(e.OuterName, StringComparison.OrdinalIgnoreCase));
+
+                var durationElement = durationExtension?.GetObject<XElement>();
+
+                var imageElement = imageExtension?.GetObject<XElement>();
+                var imageValue = imageElement?.FirstAttribute?.Value;
+                Uri imageUrl = null;
+
+                if (!string.IsNullOrEmpty(imageValue))
+                {
+                    imageUrl = new Uri(imageValue);
+                }
+
+                // Get rid of the tags
+                var summary = Regex.Replace(item.Summary.Text, @"<.+?>", string.Empty);
+
+                // Then decode the HTML entities
+                summary = WebUtility.HtmlDecode(summary);
+
                 yield return new Episode()
                 {
                     Name = item.Title.Text,
-                    Summary = item.Summary.Text,
+                    Summary = summary,
                     PublishedDate = item.PublishDate,
-                    Link = item.Links.FirstOrDefault(l => "audio/mpeg".Equals(l.MediaType, StringComparison.OrdinalIgnoreCase))?.Uri
+                    Duration = durationElement?.Value,
+                    Link = item.Links.FirstOrDefault(l => "audio/mpeg".Equals(l.MediaType, StringComparison.OrdinalIgnoreCase))?.Uri,
+                    ImageLink = imageUrl
                 };
             }
         }

@@ -20,20 +20,23 @@ namespace PodcastPlayerDiscordBot
 
         private BufferedWaveProvider provider { get; set; } = null;
 
+        public event EventHandler<FinishedPlayingEventArgs> FinishedPlaying = delegate { };
+
         public Speaker() { }
 
         public void Stop()
         {
-            provider.ClearBuffer();
+            if (provider != null)
+            {
+                provider.ClearBuffer();
+            }
 
             lock (dowloadingLock)
             {
                 IsDownloading = false;
             }
-            lock(playingLock)
-            {
-                IsPlaying = false;
-            }
+
+            FinishPlaying(true);            
         }
 
         public bool IsSpeaking()
@@ -48,7 +51,7 @@ namespace PodcastPlayerDiscordBot
             return temp;
         }
 
-        private void FinishPlaying()
+        private void FinishPlaying(bool stopped = false)
         {
             lock (playingLock)
             {
@@ -56,6 +59,7 @@ namespace PodcastPlayerDiscordBot
             }
 
             provider = null;
+            FinishedPlaying(this, new FinishedPlayingEventArgs(stopped));
         }
 
         public void Play(int channelCount, Action<byte[], int, int> addToBuffer)
