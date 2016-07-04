@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PodcastPlayerDiscordBot", "
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{A36393FB-8AD6-4426-8D91-5A320D3B7C4E}"
 	ProjectSection(SolutionItems) = preProject
-		..\..\..\..\Desktop\PodcastDescription.PNG = ..\..\..\..\Desktop\PodcastDescription.PNG
+		PodcastDescription.PNG = PodcastDescription.PNG
 		Readme.md = Readme.md
 	EndProjectSection
 EndProject
