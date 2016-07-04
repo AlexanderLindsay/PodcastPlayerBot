@@ -1,9 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.25123.0
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PodcastPlayerDiscordBot", "PodcastPlayerDiscordBot\PodcastPlayerDiscordBot.csproj", "{3130B772-F7DF-4549-9E22-24A80328D630}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{A36393FB-8AD6-4426-8D91-5A320D3B7C4E}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\..\..\Desktop\PodcastDescription.PNG = ..\..\..\..\Desktop\PodcastDescription.PNG
+		Readme.md = Readme.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
