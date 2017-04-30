@@ -1,7 +1,4 @@
-﻿using NAudio.Wave;
-using System;
-using System.Configuration;
-using System.Threading;
+﻿using System.Configuration;
 
 namespace PodcastPlayerDiscordBot
 {
@@ -14,9 +11,9 @@ namespace PodcastPlayerDiscordBot
 
             var storage = new FileFeedStorage(file);
 
-            using (var bot = new Bot("Podcast Bot", storage))
+            using (var bot = new Bot(storage))
             {
-                bot.Start(token);
+                bot.Start(token).GetAwaiter().GetResult();
             }
         }
     }

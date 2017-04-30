@@ -5,7 +5,8 @@ namespace PodcastPlayerDiscordBot
 {
     public interface IFeedStorage
     {
-        Dictionary<string, PodcastFeed> GetFeeds();
-        Task AddFeed(string name, PodcastFeed feed);
+        Task<Dictionary<string, PodcastFeed>> GetFeedsAsync();
+        Task<PodcastFeed> GetFeedAsync(string name);
+        Task AddFeedAsync(string name, PodcastFeed feed);
     }
 }
