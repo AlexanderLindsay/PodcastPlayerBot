@@ -246,3 +246,6 @@ ModelManifest.xml
 
 secrets.config
 discordbots - Web Deploy.pubxml
+ffprobe.exe
+ffplay.exe
+ffmpeg.exe

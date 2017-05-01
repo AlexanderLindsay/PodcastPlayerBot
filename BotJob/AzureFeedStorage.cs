@@ -12,6 +12,8 @@ namespace BotJob
     public class AzureFeedStorage : IFeedStorage
     {
         private DocumentClient _client;
+        private Dictionary<string, PodcastFeed> _inMemory;
+        private bool hasAll = false;
 
         private string databaseName = "Feeds";
         private string collectionName = "FeedCollection";
@@ -19,6 +21,7 @@ namespace BotJob
         public AzureFeedStorage(string url, string key)
         {
             _client = new DocumentClient(new Uri(url), key);
+            _inMemory = new Dictionary<string, PodcastFeed>();
         }
 
         public async Task Initalize()
@@ -29,48 +32,92 @@ namespace BotJob
 
         public async Task AddFeedAsync(string name, PodcastFeed feed)
         {
-            var feedDocument = new FeedDocument
-            {
-                Id = name,
-                Feed = feed
-            };
-
             try
             {
-                await _client.ReadDocumentAsync(UriFactory.CreateDocumentUri(databaseName, collectionName, feedDocument.Id));
+                var feedDocument = new FeedDocument
+                {
+                    Name = name,
+                    Url = feed.Url.ToString()
+                };
+
+                _inMemory.Add(name, feed);
+                feed.Refresh();
+
+                await _client.CreateDocumentAsync(UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), feedDocument);
             }
-            catch (DocumentClientException de)
+            catch (Exception e)
             {
-                if (de.StatusCode == HttpStatusCode.NotFound)
-                {
-                    await _client.CreateDocumentAsync(UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), feedDocument);
-                }
-                else
-                {
-                    throw;
-                }
+                Console.WriteLine(e.Message);
+                throw e;
             }
         }
 
         public Task<PodcastFeed> GetFeedAsync(string name)
         {
-            FeedOptions queryOptions = new FeedOptions { MaxItemCount = 1 };
+            try
+            {
+                PodcastFeed feed;
 
-            IQueryable<FeedDocument> feeds = _client.CreateDocumentQuery<FeedDocument>(
-                    UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), queryOptions)
-                    .Where(fd => fd.Id == name);
+                if (_inMemory.ContainsKey(name))
+                {
+                    feed = _inMemory[name];
+                    feed.Refresh();
+                }
+                else
+                {
+                    FeedOptions queryOptions = new FeedOptions { MaxItemCount = -1 };
 
-            return Task.FromResult(feeds.SingleOrDefault().Feed);
+                    var feeds = _client.CreateDocumentQuery<FeedDocument>(
+                            UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), queryOptions)
+                            .Where(fd => fd.Name == name)
+                            .ToList();
+
+                    feed = new PodcastFeed(feeds.SingleOrDefault()?.Url);
+                }
+
+                if (feed != null && !_inMemory.ContainsKey(name))
+                {
+                    _inMemory.Add(name, feed);
+                    feed.Refresh();
+                }
+
+                return Task.FromResult(feed);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                throw e;
+            }
         }
 
         public Task<Dictionary<string, PodcastFeed>> GetFeedsAsync()
         {
-            FeedOptions queryOptions = new FeedOptions { MaxItemCount = -1 };
+            if (hasAll)
+            {
+                return Task.FromResult(_inMemory);
+            }
+            else
+            {
+                FeedOptions queryOptions = new FeedOptions { MaxItemCount = -1 };
 
-            IQueryable<FeedDocument> feeds = _client.CreateDocumentQuery<FeedDocument>(
-                    UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), queryOptions);
+                IQueryable<FeedDocument> feeds = _client.CreateDocumentQuery<FeedDocument>(
+                        UriFactory.CreateDocumentCollectionUri(databaseName, collectionName), queryOptions);
 
-            return Task.FromResult(feeds.ToList().ToDictionary(fd => fd.Id, fd => fd.Feed));
+                var allFeeds = feeds
+                    .ToList();
+
+                var dictionary = allFeeds.ToDictionary(fd => fd.Name,
+                    fd =>
+                    {
+                        var feed = new PodcastFeed(fd.Url);
+                        feed.Refresh();
+                        return feed;
+                    });
+
+                _inMemory = dictionary;
+
+                return Task.FromResult(dictionary);
+            }
         }
     }
 }

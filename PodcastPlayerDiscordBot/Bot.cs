@@ -22,15 +22,15 @@ namespace PodcastPlayerDiscordBot
         private DiscordSocketClient Client { get; set; }
         private DependencyMap Map { get; set; }
 
-        private Speaker Speaker { get; set; }
+        private ISpeaker Speaker { get; set; }
         private Dictionary<string, PodcastFeed> Feeds { get; set; }
         private IFeedStorage Storage { get; set; }
 
         private Episode CurrentEpisode { get; set; }
 
-        public Bot(IFeedStorage storage)
+        public Bot(IFeedStorage storage, ISpeaker speaker)
         {
-            Speaker = new Speaker();
+            Speaker = speaker;
             Speaker.FinishedPlaying += StopPlaying;
 
             Storage = storage;
@@ -82,7 +82,7 @@ namespace PodcastPlayerDiscordBot
             // Hook the MessageReceived Event into our Command Handler
             Client.MessageReceived += HandleCommand;
             // Discover all of the commands in this assembly and load them.
-            await Commands.AddModulesAsync(Assembly.GetEntryAssembly());
+            await Commands.AddModulesAsync(Assembly.GetAssembly(typeof(Commands.Info)));
         }
 
         public async Task HandleCommand(SocketMessage messageParam)
@@ -94,6 +94,7 @@ namespace PodcastPlayerDiscordBot
             int argPos = 0;
             // Determine if the message is a command, based on if it starts with the assigned prefix or a mention prefix
             if (!(message.HasStringPrefix(prefix, ref argPos) || message.HasMentionPrefix(Client.CurrentUser, ref argPos))) return;
+
             // Create a Command Context
             var context = new CommandContext(Client, message);
             // Execute the command. (result does not indicate a return value, 

@@ -11,10 +11,10 @@ namespace PodcastPlayerDiscordBot.Commands
     public class Player : ModuleBase
     {
         private readonly DiscordSocketClient _client;
-        private readonly Speaker _speaker;
+        private readonly ISpeaker _speaker;
 
         // Dependencies can be injected via the constructor
-        public Player(DiscordSocketClient client, Speaker speaker)
+        public Player(DiscordSocketClient client, ISpeaker speaker)
         {
             _client = client;
             _speaker = speaker;
@@ -30,10 +30,9 @@ namespace PodcastPlayerDiscordBot.Commands
 
         // ~stop
         [RequireUserPermission(GuildPermission.ManageMessages), Command("stop"), Alias("stap"), Summary("halts the playing of the podcast")]
-        public Task Stop()
+        public async Task Stop()
         {
-            _speaker.Stop();
-            return Task.FromResult(false);
+            await _speaker.StopAsync();
         }
 
         // ~leave
@@ -48,10 +47,7 @@ namespace PodcastPlayerDiscordBot.Commands
                 return;
             }
 
-            _speaker.Stop();
-
-            var audio = await channel.ConnectAsync();
-            await audio.StopAsync();
+            await _speaker.StopAsync();
         }
 
         private async Task<bool> PlayUrl(Uri url, string name)
@@ -70,25 +66,14 @@ namespace PodcastPlayerDiscordBot.Commands
                 return false;
             }
 
-            if (!_speaker.IsSpeaking())
+            if (! await _speaker.IsPlayingAsync())
             {
                 var audio = await channel.ConnectAsync();
-                var audioStream = audio.CreatePCMStream(AudioApplication.Mixed, 1920);
 
                 await _client.SetGameAsync(name);
                 await _client.SetStatusAsync(UserStatus.Online);
 
-                _speaker.Load(url,
-                    (error) =>
-                    {
-                        ReplyAsync($"Error playing audio: {error}").Wait();
-                    });
-
-                _speaker.Play(2,
-                    (b, offset, count) =>
-                    {
-                        audioStream.WriteAsync(b, offset, count).Wait();
-                    });
+                await _speaker.PlayUrlAsync(url, audio);
 
                 return true;
             }

@@ -10,11 +10,14 @@ namespace BotJob
         {
             var url = CloudConfigurationManager.GetSetting("documenturl");
             var key = CloudConfigurationManager.GetSetting("documentkey");
+
             var storage = new AzureFeedStorage(url, key);
             storage.Initalize().Wait();
 
+            var speaker = new AzureSpeaker();
+
             var token = CloudConfigurationManager.GetSetting("discordToken");
-            new Bot(storage).Start(token).GetAwaiter().GetResult();
+            new Bot(storage, speaker).Start(token).GetAwaiter().GetResult();
         }
     }
 }
