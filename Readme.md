@@ -40,14 +40,14 @@ The first command to try is `$pod help`. This will list all the other commands t
 
 To get the bot to play an episode of your favorite podcast, say [Alice isn't Dead](http://www.nightvalepresents.com/aliceisntdead/), use the following commands.
 1. First get the rss feed url from the podcast site, http://aliceisntdead.libsyn.com/rss
-1. Then use the `add feed` command. 
+1. Then use the `rss add` command. 
 
-`$pod add feed aliceisntdead http://aliceisntdead.libsyn.com/rss`
+`$pod rss add aliceisntdead http://aliceisntdead.libsyn.com/rss`
 
 3. Move into a voice channel if you aren't in one already.
 3. Then use the `play episode` command.
 
-`$pod play episode aliceisntdead 1`
+`$pod rss play episode aliceisntdead 1`
 
 ![Podcast Description](PodcastDescription.PNG?raw=true)
 
