@@ -16,8 +16,6 @@ namespace PodcastPlayerDiscordBot.Commands
         private readonly ISpeaker _speaker;
         private readonly IFeedStorage _feedStorage;
 
-        private IAudioClient _audioClient;
-
         private string LastFeed { get; set; }
         private int LastEpisodeNumber { get; set; }
         private Episode CurrentEpisode { get; set; }

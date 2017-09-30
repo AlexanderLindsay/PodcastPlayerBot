@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using NAudio.Wave;
 using System.Threading;
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace PodcastPlayerDiscordBot
 {
@@ -20,7 +21,7 @@ namespace PodcastPlayerDiscordBot
 
         private CommandService Commands { get; set; }
         private DiscordSocketClient Client { get; set; }
-        private DependencyMap Map { get; set; }
+        private IServiceProvider Services { get; set; }
 
         private ISpeaker Speaker { get; set; }
         private Dictionary<string, PodcastFeed> Feeds { get; set; }
@@ -56,10 +57,11 @@ namespace PodcastPlayerDiscordBot
                 LogLevel = LogSeverity.Info
             });
 
-            Map = new DependencyMap();
-            Map.Add(Client);
-            Map.Add(Speaker);
-            Map.Add(Storage);
+            Services = new ServiceCollection()
+                .AddSingleton(Client)
+                .AddSingleton(Speaker)
+                .AddSingleton(Storage)
+                .BuildServiceProvider();
 
             await InstallCommands();
 
@@ -99,7 +101,7 @@ namespace PodcastPlayerDiscordBot
             var context = new CommandContext(Client, message);
             // Execute the command. (result does not indicate a return value, 
             // rather an object stating if the command executed succesfully)
-            var result = await Commands.ExecuteAsync(context, argPos, Map);
+            var result = await Commands.ExecuteAsync(context, argPos, Services);
             if (!result.IsSuccess)
                 await context.Channel.SendMessageAsync(result.ErrorReason);
         }
