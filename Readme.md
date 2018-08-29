@@ -19,7 +19,7 @@ This bot is built in C# and uses the [Discord.Net](https://github.com/RogueExcep
 
 #### Run Podcast Player Bot
 1. Clone or download the source code
-2. Add a secrets.config file to the PodcastPlayerBot folder that contains the token from your bot user and a file location to save the feeds too
+2. Add a secrets.config file to the PodcastPlayerDiscordBot folder that contains the token from your bot user and a file location to save the feeds too
 
 ```xml
 <?xml version="1.0" encoding="utf-8" ?>
@@ -29,8 +29,9 @@ This bot is built in C# and uses the [Discord.Net](https://github.com/RogueExcep
 </appSettings>
 ```
 
-3. Compile the program and run it (Visual Studio will make this easy and the [community edition](https://www.visualstudio.com/products/visual-studio-community-vs) is free)
-4. The bot should have now join your server!
+3. Compile the program (Visual Studio will make this easy and the [community edition](https://www.visualstudio.com/products/visual-studio-community-vs) is free)
+4. Install FFMPEG. You can either put it into the bin folder after compiling, or add the folder that it's in to your PATH.
+5. Run, and the bot should join your server!
 
 #### Interacting with PodcastPlayerBot
 
