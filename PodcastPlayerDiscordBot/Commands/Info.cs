@@ -40,7 +40,7 @@ namespace PodcastPlayerDiscordBot.Commands
             {
                 builder.AppendLine("------------------------------");
 				
-				builder.Append("**");
+                builder.Append("**");
 
                 if (command.Module.Name == "rss")
                 {
