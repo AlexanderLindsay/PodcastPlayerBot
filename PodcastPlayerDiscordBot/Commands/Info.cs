@@ -39,8 +39,17 @@ namespace PodcastPlayerDiscordBot.Commands
             foreach(var command in _commands.Commands)
             {
                 builder.AppendLine("------------------------------");
-                builder.AppendLine($"**{command.Name}**");
+				
+				builder.Append("**");
+
+                if (command.Module.Name == "rss")
+                {
+                    builder.Append($"{command.Module.Name} ");
+                }
+
+                builder.AppendLine($"{command.Name}**");
                 builder.AppendLine($"*{command.Summary}*");
+				
                 foreach(var parameter in command.Parameters)
                 {
                     var requiredFlag = parameter.IsOptional ? "" : " *required*";
